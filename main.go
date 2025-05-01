@@ -31,15 +31,15 @@ func handleRecieve(ctx context.Context, cancel context.CancelFunc, conn net.Conn
 	}
 }
 
-func handleCloseSignal(cancel context.CancelFunc, conn net.Conn) {
+func handleCloseSignal(cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan
-	fmt.Println("Interrupt Signal detected. Shutting down...")
 
-	cancel() //會通知所有的goroutine to STOP
-	conn.Close()
+	shutdown(cancel, "Interrupt Signal detected. Shutting down...")
+	signal.Stop(sigChan)
+
 }
 
 func handleInput(ctx context.Context, cancel context.CancelFunc, conn net.Conn) {
@@ -58,8 +58,8 @@ func handleInput(ctx context.Context, cancel context.CancelFunc, conn net.Conn) 
 
 			_, err := conn.Write([]byte(message + "\n"))
 			if err != nil {
-				fmt.Println("Failed to send message", err)
-				cancel()
+				
+				shutdown(cancel, fmt.Sprintf("Failed to send message due to: %s", err))
 				return
 			}
 		}
@@ -68,6 +68,11 @@ func handleInput(ctx context.Context, cancel context.CancelFunc, conn net.Conn) 
 	if err := scanner.Err(); err != nil {
 		fmt.Fprintln(os.Stderr, "error", err)
 	}
+}
+
+func shutdown(cancel context.CancelFunc, reason string) {
+	fmt.Println(reason)
+	cancel()
 }
 
 func main() {
@@ -85,10 +90,10 @@ func main() {
 		fmt.Println("Successfully Connected to the server!")
 	}
 
-	// defer conn.Close()
+	defer conn.Close()
 
 	// 持續用<-sigChan 來監聽並處理系統送來的 Ctrl + c or termination
-	go handleCloseSignal(cancel, conn)
+	go handleCloseSignal(cancel)
 
 	// 2. 建立一個 goroutine：
 	//    - 持續從 conn 讀取 server 廣播過來的訊息
